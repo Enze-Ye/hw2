@@ -17,14 +17,26 @@ def enc_first_block(raw_plain: bytes) -> bytes:
     return out[:16], out[16:32]
 
 def inc128(b: bytes) -> bytes:
-    x = int.from_bytes(b, "big")
-    x = (x + 1) & ((1 << 128) - 1)
-    return x.to_bytes(16, "big")
+    a = bytearray(b)
+    carry = 1
+    for i in range(16):             
+        v = a[i] + carry
+        a[i] = v & 0xff
+        carry = v >> 8
+        if carry == 0:
+            break
+    return bytes(a)
 
 def add128(b: bytes, n: int) -> bytes:
-    x = int.from_bytes(b, "big")
-    x = (x + n) & ((1 << 128) - 1)
-    return x.to_bytes(16, "big")
+    a = bytearray(b)
+    i = 0
+    while n > 0 and i < 16:          
+        v = a[i] + (n & 0xff)
+        a[i] = v & 0xff
+        n = (n >> 8) + (v >> 8)
+        i += 1
+    return bytes(a)
+
 
 def recover():
     secret = bytearray()
