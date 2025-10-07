@@ -1,6 +1,6 @@
-import subprocess, binascii
+#!/usr/bin/env python3
+import subprocess
 
-NX  = "/project/web-classes/Fall-2025/csci5471/hw2/next_iv"
 ENC = "/project/web-classes/Fall-2025/csci5471/hw2/encrypt"
 
 def run(cmd, data=None):
@@ -12,39 +12,25 @@ def enc_once(raw_plain: bytes):
     out = run([ENC], raw_plain)
     return out[:16], out[16:32]
 
-def inc_big(b: bytes) -> bytes:
-    x = int.from_bytes(b, "big"); x = (x + 1) & ((1<<128)-1)
-    return x.to_bytes(16, "big")
-
-def inc_little(b: bytes) -> bytes:
-    a = bytearray(b); carry = 1
-    for i in range(16):
-        v = a[i] + carry
-        a[i] = v & 0xff
-        carry = v >> 8
-        if carry == 0: break
-    return bytes(a)
-
-def inc_n(b: bytes, n: int, inc_fn):
-    x = b
-    for _ in range(n): x = inc_fn(x)
-    return x
+def add_le(b: bytes, step: int, n: int) -> bytes:
+    v = int.from_bytes(b, "little")
+    v = (v + (step * n)) & ((1 << 128) - 1)
+    return v.to_bytes(16, "little")
 
 def recover():
     secret = bytearray()
 
-    iv1,_ = enc_once(b"")  
-    iv2,_ = enc_once(b"")        
+    iv1,_ = enc_once(b"")
+    iv2,_ = enc_once(b"")
+    step = (int.from_bytes(iv2, "little") - int.from_bytes(iv1, "little")) & ((1<<128)-1)
+    if step == 0:
+        raise RuntimeError("IV step is zero")
 
-    inc_fn = inc_big if inc_big(iv1)==iv2 else inc_little if inc_little(iv1)==iv2 else None
-    if inc_fn is None: raise RuntimeError("IV increment not detected")
-
-    ctr = inc_fn(iv2)      
+    ctr = add_le(iv2, step, 1)
 
     for i in range(1,17):
         k = 16 - i
-
-        iv_real = inc_n(ctr, 256, inc_fn)
+        iv_real = add_le(ctr, step, 256)
 
         table = {}
         iv_g = ctr
@@ -57,7 +43,7 @@ def recover():
             p1[15] = g
             iv_used, c1 = enc_once(bytes(p1))
             table[c1] = (g, iv_g[15])
-            iv_g = inc_fn(iv_g)
+            iv_g = add_le(iv_g, step, 1)
 
         real_prefix = iv_real[:k] + secret
         iv_used_real, c1_real = enc_once(real_prefix)
@@ -69,7 +55,7 @@ def recover():
         secret.append(si)
         print(f"[+] byte {i:2d} = {si:02x}    secret_so_far = {secret.hex()}")
 
-        ctr = inc_fn(iv_real)
+        ctr = add_le(iv_real, step, 1)
 
     print("\nSECRET (hex)  =", secret.hex())
     try:
