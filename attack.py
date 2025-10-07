@@ -15,10 +15,10 @@ def enc_once(raw_plain: bytes):
     o = run([ENC], raw_plain)
     return o[:16], o[16:32]
 
-def peek_and_encrypt(payload: bytes):
+def fetch_with_iv(builder):
     while True:
         iv = next_iv()
-        iv_used, c1 = enc_once(payload)
+        iv_used, c1 = enc_once(builder(iv))
         if iv_used == iv:
             return iv, c1
 
@@ -27,23 +27,20 @@ def recover():
     for i in range(1,17):
         k = 16 - i
 
-        iv_real, c1_real = peek_and_encrypt(b"" if k==16 else (next_iv()+b"") ) 
-        iv_real, c1_real = peek_and_encrypt((iv_real[:k] + secret))
+        iv_real, c1_real = fetch_with_iv(lambda iv: iv[:k] + secret)
 
         found = False
         for g in range(256):
-            iv_g = next_iv()
-            p1 = bytearray(16)
-            p1[:k] = iv_g[:k]
-            for idx in range(len(secret)):
-                j = k + idx
-                p1[j] = iv_g[j] ^ iv_real[j] ^ secret[idx]
-            p1[15] = g
+            def build_tbl(iv_g, g=g, iv_real=iv_real, secret=secret, k=k):
+                p1 = bytearray(16)
+                p1[:k] = iv_g[:k]
+                for idx in range(len(secret)):
+                    j = k + idx
+                    p1[j] = iv_g[j] ^ iv_real[j] ^ secret[idx]
+                p1[15] = g
+                return bytes(p1)
 
-            iv_used, c1 = enc_once(bytes(p1))
-            if iv_used != iv_g:
-                continue
-
+            iv_g, c1 = fetch_with_iv(build_tbl)
             if c1 == c1_real:
                 s = iv_real[15] ^ iv_g[15] ^ g
                 secret.append(s)
